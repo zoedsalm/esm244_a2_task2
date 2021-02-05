@@ -1,0 +1,170 @@
+---
+title: "a2_task2_Zoe_DuerksenSalm"
+author: "Zoe Duerksen-Salm"
+date: "2/3/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE)
+
+# Attach packages
+library(tidyverse)
+library(janitor)
+library(here)
+library(readxl)
+library(dplyr)
+library(lubridate)
+library(patchwork)
+library(broom)
+library(jtools)
+library(GGally)
+```
+
+With the palmetto data, use binary logistic regression to test feasibility of using variables **plant height (height)**, **canopy length (length)**, **canopy width (width)**, and **number of green leaves (green_lvs)** to classify whether a palmetto is species Serenoa repens or Sabal etonia. Use code folding and hide all messages & warnings in your knitted HTML.
+
+```{r}
+# Read in data
+palmetto <- read_csv("palmetto.csv") %>% 
+  clean_names()
+
+palmetto$species <- gsub("1", "Serenoa repens", palmetto$species)
+palmetto$species <- gsub("2", "Sabal etonia", palmetto$species)
+
+palmetto$species <- as.factor(palmetto$species) 
+
+palmetto_explore <- palmetto
+
+palmetto_explore %>% 
+  select(species, height:green_lvs) %>% 
+  ggpairs(aes(color = species))
+```
+
+```{r}
+ggplot(data = palmetto, aes(x = height, y = height)) +
+  geom_point(aes(color = width,
+                 size = green_lvs)) +
+  facet_wrap(~species)
+```
+```{r}
+
+
+palmetto_blr <- glm(species ~ height + length + width + green_lvs,   
+                            data = palmetto, 
+                            family = "binomial")
+```
+
+
+Look at the model: 
+```{r}
+palmetto_blr
+
+summary(palmetto_blr)
+
+# Get a tidy version w/ broom: 
+palmetto_blr_tidy <- broom::tidy(palmetto_blr)
+```
+
+How can we start thinking about this? 
+
+- These are coefficients for the log-linear model (e.g. these are coefficients for the predictor variables that relate to the *log odds* of the "Serenoa repens" outcome).
+
+- The null hypothesis for coefficients is that they = 0
+
+- The coefficient for height, `r round(palmetto_blr_tidy[2,2], 3)`, indicates that on average we expect the log odds of the species being a Serenoa repens (remember, that's the '1' outcome) increases by `r round(palmetto_blr_tidy[2,2], 3)` for each 1m increase in penguin height
+
+Does this align with the height comparisons for the two species? 
+```{r}
+ggplot(data = palmetto, aes(x = species, y = height)) +
+  geom_jitter()
+```
+
+
+- The coefficient for length, `r round(palmetto_blr_tidy[3,2], 3)`, indicates that on average we expect the log odds of the species being a Serenoa repens decreases by `r round(palmetto_blr_tidy[3,2], 3)` for each 1 mm increase in length
+
+Does this align with the length comparisons for the two species? 
+```{r}
+ggplot(data = palmetto, aes(x = species, y = length)) +
+  geom_jitter()
+```
+
+- The coefficient for width, `r round(palmetto_blr_tidy[4,2], 3)`, indicates that on average we expect the log odds of the species being a Serenoa repens decreases by `r round(palmetto_blr_tidy[4,2], 3)` for each 1 mm increase in width
+
+```{r}
+ggplot(data = palmetto, aes(x = species, y = width)) +
+  geom_jitter()
+```
+
+```{r}
+ggplot(data = palmetto, aes(x = species, y = green_lvs)) +
+  geom_jitter()
+```
+
+---
+
+But log odds are challenging to interpret. Let's find actual *probabilities* associated with a penguin being Adelie or Chinstrap, based on the selected variables and the model outcome. 
+
+Adding `type.predict = "response"` here converts the log odds (link), the default reported, to the probability of being Chinstrap for each observation.
+
+```{r}
+palmetto_blr_fitted <- palmetto_blr %>% 
+  broom::augment(type.predict = "response")
+```
+
+
+Let's do a couple of quick visualizations, with green_lvs on the x-axis and probability of being a Chinstrap on the y-axis:
+```{r}
+# For height:
+effect_plot(palmetto_blr, 
+            pred = height, 
+            interval = TRUE, 
+            y.label = "Probability of 'Chinstrap'")
+
+# For length:
+effect_plot(palmetto_blr, 
+            pred = length, 
+            interval = TRUE, 
+            y.label = "Probability of 'Chinstrap'")
+
+# For width:
+effect_plot(palmetto_blr, 
+            pred = width, 
+            interval = TRUE, 
+            y.label = "Probability of 'Chinstrap'")
+
+# For # green leavess:
+effect_plot(palmetto_blr, 
+            pred = green_lvs, 
+            interval = TRUE, 
+            y.label = "Probability of 'Chinstrap'")
+```
+
+
+#### Predictions for new values with `predict()`
+
+What is the probability that a female penguin weight 3410 g with a flipper length of 192 mm will be Chinstrap?
+
+```{r}
+ex_1 <- predict(adelie_chinstrap_blr, 
+                data.frame(sex = "female", 
+                body_mass_g = 3410, 
+                flipper_length_mm = 192),
+                type = "response")
+
+# Based on the model, the probability that this penguin is a Chinstrap is 0.4.
+```
+
+You can also feed in a new data frame, with multiple penguin observations, to get model probability estimates for more than one penguin: 
+
+```{r}
+new_df <- data.frame(
+  sex = c("male", "male", "female"),
+  body_mass_g = c(3298, 4100, 3600),
+  flipper_length_mm = c(212, 175, 180)
+)
+
+ex_2 <- predict(adelie_chinstrap_blr,
+                new_df,
+                type = "response")
+```
